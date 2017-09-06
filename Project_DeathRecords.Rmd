@@ -1,0 +1,641 @@
+---
+title: "Insights into Death Records"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '~/DeathRecords')
+library(caret)
+library(e1071)
+library(party)
+library(neuralnet)
+library(klaR)
+library(ggplot2)
+```
+
+#Data Cleaning
+```{r}
+#Read dataset
+d=read.csv("DeathRecords.csv")
+
+##Exploratory analysis
+sum(is.null(d))
+summary(d)
+str(d)
+```
+
+```{r echo = FALSE }
+#creating new data frame with only desired columns
+d1=d
+d1$Education1989Revision=NULL
+d1$EducationReportingFlag=NULL
+d1$AgeSubstitutionFlag=NULL
+d1$AgeRecode52=NULL
+d1$AgeRecode27=NULL
+d1$InfantAgeRecode22=NULL
+d1$CurrentDataYear=NULL
+d1$CauseRecode358=NULL
+d1$CauseRecode113=NULL
+d1$InfantCauseRecode130=NULL
+d1$CauseRecode39=NULL
+d1$NumberOfEntityAxisConditions=NULL
+d1$NumberOfRecordAxisConditions=NULL
+d1$RaceImputationFlag=NULL
+d1$HispanicOriginRaceRecode=NULL
+d1$BridgedRaceFlag=NULL
+d1$RaceImputationFlag=NULL
+d1$RaceRecode3=NULL
+d1$RaceRecode5=NULL
+d1$HispanicOrigin = NULL
+
+##Cleaning Autopsy column to maintain uniform category names
+d1$Autopsy=replace(d1$Autopsy,d1$Autopsy=='y','Y')
+d1$Autopsy=replace(d1$Autopsy,d1$Autopsy=='n','N')
+
+##Remove entries with agetype!=1 (Age mentioned in months,hours,minutes etc)
+d1 <- subset(d1,d1$AgeType==1)
+
+##Remove enteries with Age greater than 100
+d1 <- subset(d1,d1$Age<=100)
+```
+
+#data cleaning of d1
+```{r echo = FALSE}
+d1$Id <- NULL
+d1$AgeType <- NULL
+d1$ResidentStatus <- as.factor(d1$ResidentStatus)
+d1$Education2003Revision <- as.factor(d1$Education2003Revision)
+d1$MonthOfDeath <- as.factor(d1$MonthOfDeath)
+d1$AgeRecode12 <- as.factor(d1$AgeRecode12)
+d1$PlaceOfDeathAndDecedentsStatus <- as.factor(d1$PlaceOfDeathAndDecedentsStatus)
+d1$DayOfWeekOfDeath <- as.factor(d1$DayOfWeekOfDeath)
+d1$MannerOfDeath <- as.factor(d1$MannerOfDeath)
+d1$ActivityCode <- as.factor(d1$ActivityCode)
+d1$PlaceOfInjury <- as.factor(d1$PlaceOfInjury)
+d1$Race <- as.factor(d1$Race)
+```
+
+```{r}
+head(d1)
+tail(d1)
+summary(d1)
+```
+
+```{r}
+#graphs of the data
+ggplot(d1, aes(x=Age)) + geom_histogram(binwidth = 5, color = "black") + ggtitle("Distribution of Age")
+ggplot(d1, aes(x=Sex)) + geom_bar(aes(fill=Sex)) + ggtitle("Male/Female distribution")
+```
+
+```{r echo = FALSE}
+##Write new Data frame to a csv file
+#write.csv(d1,"NewDeathRecords.csv",row.names = F)
+```
+
+#Sampling
+```{r echo = FALSE}
+#Stratified Random Sample
+temp = table(d1$AgeRecode12)
+prop = prop.table(temp)
+prop_of_sample = (prop*nrow(d1)*0.01)
+
+d1_2 = subset(d1, d1$AgeRecode12 == 2)
+d1_3 = subset(d1, d1$AgeRecode12 == 3)
+d1_4 = subset(d1, d1$AgeRecode12 == 4)
+d1_5 = subset(d1, d1$AgeRecode12 == 5)
+d1_6 = subset(d1, d1$AgeRecode12 == 6)
+d1_7 = subset(d1, d1$AgeRecode12 == 7)
+d1_8 = subset(d1, d1$AgeRecode12 == 8)
+d1_9 = subset(d1, d1$AgeRecode12 == 9)
+d1_10 = subset(d1, d1$AgeRecode12 == 10)
+d1_11 = subset(d1, d1$AgeRecode12 == 11)
+
+
+d1_2_sample = d1_2[sample(nrow(d1_2),prop_of_sample[1]),]
+d1_3_sample = d1_3[sample(nrow(d1_3),prop_of_sample[2]),]
+d1_4_sample = d1_4[sample(nrow(d1_4),prop_of_sample[3]),]
+d1_5_sample = d1_5[sample(nrow(d1_5),prop_of_sample[4]),]
+d1_6_sample = d1_6[sample(nrow(d1_6),prop_of_sample[5]),]
+d1_7_sample = d1_7[sample(nrow(d1_7),prop_of_sample[6]),]
+d1_8_sample = d1_8[sample(nrow(d1_8),prop_of_sample[7]),]
+d1_9_sample = d1_9[sample(nrow(d1_9),prop_of_sample[8]),]
+d1_10_sample = d1_10[sample(nrow(d1_10),prop_of_sample[9]),]
+d1_11_sample = d1_11[sample(nrow(d1_11),prop_of_sample[10]),]
+
+d1_sample = rbind(d1_2_sample,d1_3_sample,d1_4_sample,d1_5_sample,d1_6_sample,d1_7_sample,d1_8_sample,d1_9_sample,d1_10_sample,
+                  d1_11_sample)
+
+#creating train and test sets
+index <- 1:nrow(d1_sample)
+testindex <- sample(index, trunc(length(index)/5))
+testset <- d1_sample[testindex,]
+trainset <- d1_sample[-testindex,]
+attach(trainset)
+```
+
+```{r}
+str(d1_sample)
+```
+
+#Linear Regression
+```{r}
+lm_model1 = lm(Age~ResidentStatus+Education2003Revision+Sex+MaritalStatus+Race, data = trainset)
+summary(lm_model1)
+
+#Predict
+linear_test <- testset
+linear_test$pred = predict(lm_model1, linear_test)
+head(linear_test)
+```
+
+#Random Sampling for suicide/non-suicide cases
+```{r echo = FALSE}
+d1_copy = d1
+d1 = d1_copy
+d1$MannerOfDeath = ifelse(d1$MannerOfDeath == 2, 1, 0)
+prop_suicide = prop.table(table(d1$MannerOfDeath))
+prop_suicide = prop_suicide*nrow(d1)*0.20
+
+d1_suicide = subset(d1, d1$MannerOfDeath == 1)
+d1_not_suicide = subset(d1, d1$MannerOfDeath == 0)
+
+d1_not_suicide_sample = d1_not_suicide[sample(nrow(d1_not_suicide),5000),]
+d1_suicide_sample = d1_suicide[sample(nrow(d1_suicide),5000),]
+
+suicide_sample = rbind(d1_not_suicide_sample,d1_suicide_sample)
+suicide_sample$MannerOfDeath <- as.factor(suicide_sample$MannerOfDeath)
+```
+
+```{r}
+
+#dummy coding variables
+dmy <- dummyVars(~ Race + ResidentStatus +DayOfWeekOfDeath +InjuryAtWork
+                 + Education2003Revision + Sex + PlaceOfInjury
+                 + MaritalStatus + PlaceOfDeathAndDecedentsStatus, data=suicide_sample,
+                 fullRank = TRUE)
+
+dmy_df <- data.frame(predict(dmy, newdata = suicide_sample))
+head(dmy_df)
+```
+
+```{r}
+suicide_sample <- cbind(suicide_sample, dmy_df)
+
+#creating train and test sets 
+index_suicide <- 1:nrow(suicide_sample)
+testindex_suicide <- sample(index_suicide, trunc(length(index_suicide)/5))
+testset_suicide <- suicide_sample[testindex_suicide,]
+trainset_suicide <- suicide_sample[-testindex_suicide,]
+
+#baseline measure
+mfc_baseline <- sum(testset_suicide$MannerOfDeath == "0")/nrow(testset_suicide)
+mfc_baseline
+str(suicide_sample)
+
+attach(trainset_suicide)
+```
+
+#Logistic Regression
+```{r}
+logistic_model = glm(MannerOfDeath~ResidentStatus+Education2003Revision+Sex+
+                       PlaceOfDeathAndDecedentsStatus+InjuryAtWork + PlaceOfInjury,
+                     family=binomial(), data = trainset_suicide)
+
+summary(logistic_model)
+logistic_test <- testset_suicide
+logistic_test$pred = predict(logistic_model, logistic_test, type = "response")
+
+##REPLACE Probability values with 1/0 
+logistic_test$pred = replace(logistic_test$pred, logistic_test$pred >= 0.5, 1)
+logistic_test$pred = replace(logistic_test$pred, logistic_test$pred < 0.5, 0)
+
+table(logistic_test$pred)
+
+#Confusion Matrix
+accuracy = table(logistic_test$pred, logistic_test$MannerOfDeath)
+accuracy
+sum(diag(accuracy))/sum(accuracy)
+confusionMatrix(accuracy)
+```
+
+#SVM
+```{r echo = FALSE}
+svm_data <- trainset_suicide
+svm_test <- testset_suicide
+
+svm_data$MannerOfDeath <- as.factor(svm_data$MannerOfDeath)
+svm_test$MannerOfDeath <- as.factor(svm_test$MannerOfDeath)
+
+svm_data$ResidentStatus <- NULL
+svm_data$Race <- NULL
+svm_data$DayOfWeekOfDeath <- NULL
+svm_data$InjuryAtWork <- NULL
+svm_data$Education2003Revision <- NULL
+svm_data$Sex <- NULL
+svm_data$ActivityCode <- NULL
+svm_data$PlaceOfInjury <- NULL
+svm_data$MaritalStatus <- NULL
+svm_data$PlaceOfDeathAndDecedentsStatus <- NULL
+svm_data$MonthOfDeath <- NULL
+svm_data$AgeRecode12 <- NULL
+svm_data$MethodOfDisposition <- NULL
+svm_data$Autopsy <- NULL
+svm_data$Icd10Code <- NULL
+svm_data$Race.38 <- NULL
+
+svm_test$ResidentStatus <- NULL
+svm_test$Race <- NULL
+svm_test$DayOfWeekOfDeath <- NULL
+svm_test$InjuryAtWork <- NULL
+svm_test$Education2003Revision <- NULL
+svm_test$Sex <- NULL
+svm_test$ActivityCode <- NULL
+svm_test$PlaceOfInjury <- NULL
+svm_test$MaritalStatus <- NULL
+svm_test$PlaceOfDeathAndDecedentsStatus <- NULL
+svm_test$MonthOfDeath <- NULL
+svm_test$AgeRecode12 <- NULL
+svm_test$MethodOfDisposition <- NULL
+svm_test$Autopsy <- NULL
+svm_test$Icd10Code <- NULL
+svm_test$Race.38 <- NULL
+```
+
+```{r}
+#Linear Kernel
+svm_fit = svm(MannerOfDeath ~ ., data = svm_data, kernel='linear')
+summary(svm_fit)
+
+#polynomial kernel
+svm_fit1 = svm(MannerOfDeath ~ ., data = svm_data, kernel='polynomial')
+summary(svm_fit1)
+
+#Radial basis kernel
+svm_fit2 = svm(MannerOfDeath ~ ., data = svm_data, kernel='radial')
+summary(svm_fit2)
+
+svm_test$pred_svm=predict(svm_fit, svm_test, type='class')
+svm_test$pred_svm1=predict(svm_fit1, svm_test, type='class')
+svm_test$pred_svm2=predict(svm_fit2, svm_test, type='class')
+
+table(svm_test$pred_svm) #model1 SVM
+table(svm_test$pred_svm1) #model2 SVM
+table(svm_test$pred_svm2) #model3 SVM
+
+#Confusion Matrix
+accuracy_svm = table(svm_test$pred_svm, svm_test$MannerOfDeath)
+confusionMatrix(accuracy_svm)
+sum(diag(accuracy_svm))/sum(accuracy_svm)
+
+accuracy_svm1 = table(svm_test$pred_svm1,svm_test$MannerOfDeath)
+confusionMatrix(accuracy_svm1)
+sum(diag(accuracy_svm1))/sum(accuracy_svm1)
+
+accuracy_svm2 = table(svm_test$pred_svm2, svm_test$MannerOfDeath)
+confusionMatrix(accuracy_svm2)
+sum(diag(accuracy_svm2))/sum(accuracy_svm2)
+
+```
+
+#Decision Tree
+```{r}
+
+tree <- ctree(MannerOfDeath~
+                ResidentStatus+Age+Education2003Revision+Sex+MaritalStatus+InjuryAtWork+Race+
+                PlaceOfDeathAndDecedentsStatus,data=trainset_suicide)
+summary(tree)
+plot(tree)
+
+tree_test <- testset_suicide
+tree_test$tree_pred=predict(tree,tree_test,type="response")
+accuracy_dt = table(tree_test$tree_pred,tree_test$MannerOfDeath)
+confusionMatrix(accuracy_dt)
+```
+
+#Neural Networks
+```{r echo = FALSE}
+nn_data <- trainset_suicide
+nn_test <- testset_suicide
+
+#Removing variables not required for the model
+nn_data$predsvm <- NULL
+nn_data[, 1:4] <- NULL
+nn_data[, 2:6] <- NULL
+nn_data[, 3:8] <- NULL
+nn_data$InjuryAtWork.U <- NULL
+nn_data$InjuryAtWork.Y <- NULL
+nn_data$ResidentStatus.2 <- NULL
+nn_data$ResidentStatus.3 <- NULL
+nn_data$ResidentStatus.4 <- NULL
+nn_data[, 54:60] <- NULL
+nn_data[, 40:49] <- NULL
+
+
+nn_test[, 1:4] <- NULL
+nn_test[, 2:6] <- NULL
+nn_test[, 3:8] <- NULL
+nn_test$InjuryAtWork.U <- NULL
+nn_test$InjuryAtWork.Y <- NULL
+nn_test$ResidentStatus.2 <- NULL
+nn_test$ResidentStatus.3 <- NULL
+nn_test$ResidentStatus.4 <- NULL
+nn_test[, 54:60] <- NULL
+nn_test[, 40:49] <- NULL
+
+mod_test <- as.data.frame(nn_test$MannerOfDeath)
+colnames(mod_test) <- "MannerOfDeath"
+mod_test$MannerOfDeath <- as.numeric(mod_test$MannerOfDeath)
+mod_test$MannerOfDeath = ifelse(mod_test$MannerOfDeath == 2, 1, 0)
+nn_test$MannerOfDeath <- NULL
+
+
+#Encoding binary variables as -1,1
+nn_data$Sex.M[nn_data$Sex.M == 0] <- -1
+nn_test$Sex.M[nn_test$Sex.M == 0] <- -1
+nn_data$Sex.M <- as.numeric(nn_data$Sex.M)
+nn_test$Sex.M <- as.numeric(nn_test$Sex.M)
+nn_data$MannerOfDeath <- as.numeric(nn_data$MannerOfDeath)
+nn_data$MannerOfDeath = ifelse(nn_data$MannerOfDeath == 2, 1, 0)
+```
+
+
+```{r}
+#Normalizing the Age Variable in the interval [0,1]
+summary(nn_data$Age)
+
+maxValue <- max(nn_data$Age)
+minValue <- min(nn_data$Age)
+Age_df <- as.data.frame(scale(nn_data$Age, center = minValue, scale = maxValue - minValue))
+colnames(Age_df) <- "Age"
+nn_data$Age <- Age_df$Age
+head(nn_data$Age)
+tail(nn_data$Age)
+
+
+maxValue_t <- max(nn_test$Age)
+minValue_t <- min(nn_test$Age)
+Age_df_test <- as.data.frame(scale(nn_test$Age, center = minValue_t, scale = maxValue_t - minValue_t))
+colnames(Age_df_test) <- "Age"
+nn_test$Age <- Age_df_test$Age
+
+#model
+allVars <- colnames(nn_data)
+predictorVars <- allVars[!allVars%in%"MannerOfDeath"]
+predictorVars <- paste(predictorVars, collapse = "+")
+form = as.formula(paste("MannerOfDeath~", predictorVars, collapse = "+"))
+
+neuralModel <- neuralnet(formula = form, hidden = 3, linear.output = FALSE, data=nn_data)
+plot(neuralModel)
+
+#predictions for test dataset
+predictions <- compute(neuralModel, nn_test[1:42])
+print(head(predictions$net.result))
+predictions$net.result <- sapply(predictions$net.result, round, digits=0)
+
+nn_test <- cbind(nn_test, mod_test)
+table(nn_test$MannerOfDeath, predictions$net.result)
+
+```
+
+#Clustering suicide cases on the basis of education and race
+```{r echo = FALSE}
+
+trainset_suicide$Race = as.factor(trainset_suicide$Race)
+table(trainset_suicide$MannerOfDeath)
+cluster_data = trainset_suicide[,c("Race", "Education2003Revision")]
+cluster_death = cluster_data
+cluster_death$MannerOfDeath = trainset_suicide$MannerOfDeath
+
+```
+
+```{r}
+k_mode = kmodes(cluster_data, 2, weighted = FALSE)
+cluster_death$Race = as.factor(cluster_death$Race)
+cluster_death$Education2003Revision = as.factor(cluster_death$Education2003Revision)
+cluster_death$MannerOfDeath = as.factor(cluster_death$MannerOfDeath)
+
+cluster_data$Race = as.factor(cluster_data$Race)
+cluster_data$Education2003Revision = as.factor(cluster_data$Education2003Revision)
+cluster_data_matrix = data.matrix(cluster_data)
+
+plot(jitter(cluster_data_matrix), col = cluster_death$MannerOfDeath)
+plot(jitter(cluster_data_matrix), col = k_mode$cluster)
+
+table(cluster_death$MannerOfDeath, k_mode$cluster)
+```
+
+#Clustering suicide cases on the basis of sex and Marital Status
+```{r}
+cluster_data = trainset_suicide[,c("Sex", "MaritalStatus")]
+cluster_death = cluster_data
+cluster_death$MannerOfDeath = trainset_suicide$MannerOfDeath
+
+k_mode = kmodes(cluster_data, 2, weighted = FALSE)
+cluster_death$Sex = as.factor(cluster_death$Sex)
+cluster_death$MaritalStatus = as.factor(cluster_death$MaritalStatus)
+cluster_death$MannerOfDeath = as.factor(cluster_death$MannerOfDeath)
+
+cluster_data$Sex = as.factor(cluster_data$Sex)
+cluster_data$MaritalStatus = as.factor(cluster_data$MaritalStatus)
+cluster_data_matrix = data.matrix(cluster_data)
+
+plot(jitter(cluster_data_matrix), col = cluster_death$MannerOfDeath)
+plot(jitter(cluster_data_matrix), col = k_mode$cluster)
+
+table(cluster_death$MannerOfDeath, k_mode$cluster)
+```
+
+#Question 2
+```{r}
+#Binning the age into three categories - Young, Middle Ages and Old
+
+d1$Age_Bin = d1$Age
+d1$Age_Bin = ifelse(d1$Age_Bin > 40, ifelse(d1$Age_Bin<65, 2, 3), 1)
+table(d1$Age_Bin)
+```
+
+```{r echo = FALSE}
+#Random Sampling on the Basis of Age Bin
+d1_copy = d1
+d1 = d1_copy
+prop_age_bin = prop.table(table(d1$Age_Bin))
+prop_age_bin = prop_age_bin*nrow(d1)*0.20
+
+d1_young = subset(d1, d1$Age_Bin == 1)
+d1_medium = subset(d1, d1$Age_Bin == 2)
+d1_old = subset(d1, d1$Age_Bin == 3)
+
+d1_young_sample = d1_young[sample(nrow(d1_young),5000),]
+d1_middle_sample = d1_medium[sample(nrow(d1_medium),5000),]
+d1_old_sample = d1_old[sample(nrow(d1_old),5000),]
+
+age_bin_sample = rbind(d1_young_sample,d1_middle_sample,d1_old_sample)
+age_bin_sample$Age_Bin <- as.factor(age_bin_sample$Age_Bin)
+
+
+```
+
+```{r}
+#dummy coding variables for life expectancy test
+
+dmy <- dummyVars(~ Race + ResidentStatus +DayOfWeekOfDeath +InjuryAtWork
+                 + Education2003Revision + Sex + PlaceOfInjury
+                 + MaritalStatus + PlaceOfDeathAndDecedentsStatus, data=age_bin_sample,
+                 fullRank = TRUE)
+
+dmy_df <- data.frame(predict(dmy, newdata = age_bin_sample))
+
+age_bin_sample <- cbind(age_bin_sample, dmy_df)
+
+index_age_bin <- 1:nrow(age_bin_sample)
+testindex_age_bin <- sample(index_age_bin, trunc(length(index_age_bin)/5))
+testset_age_bin <- age_bin_sample[testindex_age_bin,]
+trainset_age_bin <- age_bin_sample[-testindex_age_bin,]
+
+#baseline measure
+mfc_baseline <- sum(testset_age_bin$Age_Bin == "3")/nrow(testset_age_bin)
+mfc_baseline
+```
+
+```{r echo = FALSE}
+attach(trainset_age_bin)
+
+
+#SVM For Life Expectancy
+svm_data <- trainset_age_bin
+
+svm_data$ResidentStatus <- NULL
+svm_data$Race <- NULL
+svm_data$DayOfWeekOfDeath <- NULL
+svm_data$InjuryAtWork <- NULL
+svm_data$Education2003Revision <- NULL
+svm_data$Sex <- NULL
+svm_data$ActivityCode <- NULL
+svm_data$PlaceOfInjury <- NULL
+svm_data$MaritalStatus <- NULL
+svm_data$PlaceOfDeathAndDecedentsStatus <- NULL
+svm_data$MonthOfDeath <- NULL
+svm_data$AgeRecode12 <- NULL
+svm_data$MethodOfDisposition <- NULL
+svm_data$Autopsy <- NULL
+svm_data$Icd10Code <- NULL
+svm_data$MannerOfDeath <- NULL
+svm_data$Age <- NULL
+```
+
+```{r}
+svm_fit = svm(Age_Bin ~ ., data = svm_data)
+summary(svm_fit)
+
+trainset_age_bin$predsvm=predict(svm_fit,data=trainset_age_bin)
+
+#Confusion Matrix
+accuracy_svm_age_bin = table(trainset_age_bin$predsvm, trainset_age_bin$Age_Bin)
+accuracy_svm_age_bin
+sum(diag(accuracy_svm_age_bin))/sum(accuracy_svm_age_bin)
+
+
+#-------------------------------------- Decision tree ---------------------------------------------
+
+trainset_age_bin$Age_Bin <- as.factor(trainset_age_bin$Age_Bin)
+tree <- ctree(trainset_age_bin$Age_Bin ~ trainset_age_bin$ResidentStatus+trainset_age_bin$Education2003Revision+trainset_age_bin$Sex+trainset_age_bin$MaritalStatus+trainset_age_bin$InjuryAtWork+trainset_age_bin$Race+trainset_age_bin$PlaceOfDeathAndDecedentsStatus,data=trainset_age_bin)
+summary(tree)
+
+trainset_age_bin$tree_pred=predict(tree,trainset_age_bin,type="response")
+accuracy_dt = table(trainset_age_bin$tree_pred,trainset_age_bin$Age_Bin)
+accuracy_dt
+sum(diag(accuracy_dt))/sum(accuracy_dt)
+plot(tree)
+```
+
+#Clustering
+
+```{r}
+#Taking a random sample for age binning cases for clustering
+
+prop_age_bin = prop.table(table(d1$Age_Bin))
+prop_age_bin = prop_age_bin*nrow(d1)*0.20
+prop_age_bin
+
+d1_young = subset(d1, d1$Age_Bin == 1)
+d1_medium = subset(d1, d1$Age_Bin == 2)
+d1_old = subset(d1, d1$Age_Bin == 3)
+
+table(d1$Age_Bin)
+d1_young_sample = d1_young[sample(nrow(d1_young),5000),]
+d1_middle_sample = d1_medium[sample(nrow(d1_medium),5000),]
+d1_old_sample = d1_old[sample(nrow(d1_old),5000),]
+
+nrow(d1_young_sample)
+nrow(d1_middle_sample)
+nrow(d1_old_sample)
+
+age_bin_sample = rbind(d1_young_sample,d1_middle_sample,d1_old_sample)
+nrow(age_bin_sample)
+summary(age_bin_sample)
+class(age_bin_sample$Age_Bin)
+age_bin_sample$Age_Bin <- as.factor(age_bin_sample$Age_Bin)
+
+index_age_bin <- 1:nrow(age_bin_sample)
+testindex_age_bin <- sample(index_age_bin, trunc(length(index_age_bin)/5))
+testset_age_bin <- age_bin_sample[testindex_age_bin,]
+trainset_age_bin <- age_bin_sample[-testindex_age_bin,]
+
+nrow(testset_age_bin)
+nrow(trainset_age_bin)
+colnames(trainset_age_bin)
+attach(trainset_age_bin)
+trainset_age_bin$Age_Bin = as.factor(trainset_age_bin$Age_Bin)
+```
+
+```{r}
+#MyClustering Example 1
+#Clustering suicide cases on the basis of education ad race
+
+trainset_age_bin$Race = as.factor(trainset_age_bin$Race)
+levels(trainset_age_bin$Race)
+trainset_age_bin$Education2003Revision = as.factor(trainset_age_bin$Education2003Revision)
+levels(trainset_age_bin$Education2003Revision)
+table(trainset_age_bin$Age_Bin)
+cluster_data = trainset_age_bin[,c("Race", "Education2003Revision")]
+cluster_death = cluster_data
+cluster_death$Age_Bin = trainset_age_bin$Age_Bin
+
+k_mode = kmodes(cluster_data, 3, weighted = FALSE)
+cluster_death$Race = as.factor(cluster_death$Race)
+cluster_death$Education2003Revision = as.factor(cluster_death$Education2003Revision)
+cluster_death$Age_Bin = as.factor(cluster_death$Age_Bin)
+
+cluster_data$Race = as.factor(cluster_data$Race)
+cluster_data$Education2003Revision = as.factor(cluster_data$Education2003Revision)
+cluster_data_matrix = data.matrix(cluster_data)
+
+plot(jitter(cluster_data_matrix), col = cluster_death$Age_Bin)
+plot(jitter(cluster_data_matrix), col = k_mode$cluster)
+
+table(cluster_death$Age_Bin, k_mode$cluster)
+
+#MyClustering Example 2
+#Clustering suicide cases on the basis of sex and Marital Status
+
+table(trainset_age_bin$Age_Bin)
+
+cluster_data = trainset_age_bin[,c("Sex", "MaritalStatus")]
+cluster_death = cluster_data
+cluster_death$Age_Bin = trainset_age_bin$Age_Bin
+
+k_mode = kmodes(cluster_data, 3, weighted = FALSE)
+cluster_death$Sex = as.factor(cluster_death$Sex)
+cluster_death$MaritalStatus = as.factor(cluster_death$MaritalStatus)
+cluster_death$Age_Bin = as.factor(cluster_death$Age_Bin)
+
+cluster_data$Sex = as.factor(cluster_data$Sex)
+cluster_data$MaritalStatus = as.factor(cluster_data$MaritalStatus)
+cluster_data_matrix = data.matrix(cluster_data)
+
+plot(jitter(cluster_data_matrix), col = cluster_death$Age_Bin)
+plot(jitter(cluster_data_matrix), col = k_mode$cluster)
+
+table(cluster_death$Age_Bin, k_mode$cluster)
+```
